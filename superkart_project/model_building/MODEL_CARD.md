@@ -11,7 +11,7 @@ Scikit-learn pipeline (StandardScaler + OneHotEncoder -> XGBRegressor) that pred
 - `superkart_sales_model_v1_portable.json` - the same model exported to JSON (scaler, encoder, trees) for
   dependency-free scoring; validated to match the pipeline on the test set
 
-Trained on [saisrk/superkart-sales-dataset](https://huggingface.co/datasets/saisrk/superkart-sales-dataset) at 2026-09-27 09:54:26 UTC.
+Trained on [saisrk/superkart-sales-dataset](https://huggingface.co/datasets/saisrk/superkart-sales-dataset) at 2026-09-27 09:56:56 UTC.
 
 | Test metric | Value |
 |---|---|
