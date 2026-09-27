@@ -1,13 +1,13 @@
-"""SuperKart Sales Forecaster — Streamlit front-end served from Hugging Face Spaces."""
+"""SuperKart Sales Forecaster — Streamlit front-end (runs in Docker or in the browser via stlite)."""
 import os
-import joblib
+import json
 import pandas as pd
 import streamlit as st
-from huggingface_hub import hf_hub_download
+from predictor import predict_row
 
-# The model repo is injected as a Space variable by hosting.py
+# Model repo on the Hugging Face Model Hub (hosting.py fills in the default; Docker can override via env)
 MODEL_REPO = os.getenv("MODEL_REPO", "your-hf-username/superkart-sales-model")
-MODEL_FILE = "superkart_sales_model_v1.joblib"
+MODEL_FILE = "superkart_sales_model_v1_portable.json"
 
 FEATURES = ["Product_Weight", "Product_Sugar_Content", "Product_Allocated_Area",
             "Product_Type", "Product_MRP", "Store_Establishment_Year", "Store_Size",
@@ -29,9 +29,20 @@ STORE_TYPES = ["Supermarket Type1", "Supermarket Type2", "Departmental Store", "
 
 @st.cache_resource
 def load_model():
-    """Download the registered model from the Hugging Face Model Hub (cached)."""
-    path = hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)
-    return joblib.load(path)
+    """Load the registered model from the Hugging Face Model Hub (cached)."""
+    try:                                   # Docker / local: HF client with caching
+        from huggingface_hub import hf_hub_download
+        with open(hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)) as f:
+            return json.load(f)
+    except ImportError:                    # browser (stlite): plain HTTPS download
+        from urllib.request import urlopen
+        url = f"https://huggingface.co/{MODEL_REPO}/resolve/main/{MODEL_FILE}"
+        return json.loads(urlopen(url).read())
+
+
+def predict(df):
+    """Predict sales for every row of a DataFrame with the model's feature columns."""
+    return [round(predict_row(model, row), 2) for row in df[FEATURES].to_dict("records")]
 
 
 st.set_page_config(page_title="SuperKart Sales Forecaster", page_icon="🛒", layout="wide")
@@ -75,7 +86,7 @@ with single_tab:
     st.dataframe(input_df, hide_index=True, use_container_width=True)
 
     if st.button("Predict sales", type="primary"):
-        prediction = float(model.predict(input_df)[0])
+        prediction = predict(input_df)[0]
         st.success(f"Predicted Product_Store_Sales_Total: **{prediction:,.2f}**")
 
 with batch_tab:
@@ -94,7 +105,7 @@ with batch_tab:
         if missing:
             st.error(f"Missing columns: {missing}")
         else:
-            batch["Predicted_Sales"] = model.predict(batch[FEATURES]).round(2)
+            batch["Predicted_Sales"] = predict(batch)
             st.dataframe(batch, use_container_width=True)
             st.metric("Total forecast revenue", f"{batch['Predicted_Sales'].sum():,.0f}")
             st.download_button("Download predictions", batch.to_csv(index=False),

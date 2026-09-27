@@ -4,5 +4,6 @@ __pycache__/
 sample_data/
 .config/
 *.joblib
+*_portable.json
 /*.csv
 /*.png

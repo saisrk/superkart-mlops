@@ -1,5 +1,5 @@
 """Step 3 — Tune XGBoost, evaluate it and register the best model on the HF Model Hub."""
-import os, json
+import os, sys, json
 from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
@@ -19,7 +19,12 @@ DATASET_REPO = f"{HF_USERNAME}/superkart-sales-dataset"
 MODEL_REPO = f"{HF_USERNAME}/superkart-sales-model"
 OUT_DIR = "superkart_project/model_building"
 MODEL_FILE = "superkart_sales_model_v1.joblib"
+PORTABLE_FILE = "superkart_sales_model_v1_portable.json"
 TARGET = "Product_Store_Sales_Total"
+
+# Scoring code shared with the Streamlit app (used here to validate the portable export)
+sys.path.insert(0, "superkart_project/deployment")
+from predictor import predict_row
 
 # ---------- 1. Load train/test from the Dataset Hub ----------
 train_df = pd.read_csv(f"hf://datasets/{DATASET_REPO}/train.csv")
@@ -82,10 +87,46 @@ metrics = {
 }
 print(pd.DataFrame({"Train": metrics["train"], "Test": metrics["test"]}).round(4))
 
-# ---------- 5. Save model, metrics and model card ----------
+# ---------- 5. Save model, portable export, metrics and model card ----------
 os.makedirs(OUT_DIR, exist_ok=True)
 model_path = f"{OUT_DIR}/{MODEL_FILE}"
 joblib.dump(best_model, model_path)
+
+def export_portable(pipeline):
+    """Export the fitted pipeline (scaler + encoder + XGBoost trees) to plain JSON,
+    so the app can score it without scikit-learn/xgboost (e.g. in the browser)."""
+    ct = pipeline.named_steps["columntransformer"]
+    scaler = ct.named_transformers_["standardscaler"]
+    encoder = ct.named_transformers_["onehotencoder"]
+    booster = pipeline.named_steps["xgbregressor"].get_booster()
+    cfg = json.loads(booster.save_config())
+    base_score = float(str(cfg["learner"]["learner_model_param"]["base_score"]).strip("[]"))
+    trees = []
+    for dump in booster.get_dump(dump_format="json"):
+        nodes, stack = {}, [json.loads(dump)]
+        while stack:
+            n = stack.pop()
+            if "leaf" in n:
+                nodes[n["nodeid"]] = {"leaf": n["leaf"]}
+            else:
+                nodes[n["nodeid"]] = {"f": int(n["split"][1:]), "t": n["split_condition"],
+                                      "yes": n["yes"], "no": n["no"], "missing": n["missing"]}
+                stack.extend(n["children"])
+        trees.append([nodes[i] for i in range(len(nodes))])
+    return {"num_cols": NUM_COLS, "mean": scaler.mean_.tolist(), "scale": scaler.scale_.tolist(),
+            "cat_cols": CAT_COLS, "categories": [c.tolist() for c in encoder.categories_],
+            "sparse_input": bool(getattr(ct, "sparse_output_", False)),
+            "base_score": base_score, "trees": trees}
+
+portable = export_portable(best_model)
+# The export must reproduce the pipeline's predictions
+check = np.array([predict_row(portable, r) for r in X_test.to_dict("records")])
+max_diff = float(np.abs(check - best_model.predict(X_test)).max())
+assert max_diff < 0.5, f"Portable export mismatch: {max_diff}"
+print(f"Portable export validated on test set (max abs difference {max_diff:.4f})")
+portable_path = f"{OUT_DIR}/{PORTABLE_FILE}"
+with open(portable_path, "w") as f:
+    json.dump(portable, f)
 with open(f"{OUT_DIR}/metrics.json", "w") as f:
     json.dump(metrics, f, indent=2)
 
@@ -98,6 +139,10 @@ tags: [xgboost, regression, sales-forecasting, superkart]
 
 Scikit-learn pipeline (StandardScaler + OneHotEncoder -> XGBRegressor) that predicts
 `Product_Store_Sales_Total` for a product in a store.
+
+- `{MODEL_FILE}` - the tuned scikit-learn pipeline (joblib)
+- `{PORTABLE_FILE}` - the same model exported to JSON (scaler, encoder, trees) for
+  dependency-free scoring; validated to match the pipeline on the test set
 
 Trained on [{DATASET_REPO}](https://huggingface.co/datasets/{DATASET_REPO}) at {metrics['trained_at']}.
 
@@ -117,6 +162,7 @@ with open(card_path, "w") as f:
 # ---------- 6. Register the best model on the HF Model Hub ----------
 api.create_repo(repo_id=MODEL_REPO, repo_type="model", private=False, exist_ok=True)
 for local, remote in [(model_path, MODEL_FILE),
+                      (portable_path, PORTABLE_FILE),
                       (f"{OUT_DIR}/metrics.json", "metrics.json"),
                       (card_path, "README.md")]:
     api.upload_file(path_or_fileobj=local, path_in_repo=remote,

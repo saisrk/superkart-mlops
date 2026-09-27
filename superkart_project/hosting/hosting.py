@@ -6,19 +6,25 @@ api = HfApi(token=os.getenv("HF_TOKEN"))
 HF_USERNAME = api.whoami()["name"]
 SPACE_REPO = f"{HF_USERNAME}/superkart-sales-forecaster"
 MODEL_REPO = f"{HF_USERNAME}/superkart-sales-model"
+DEPLOY_DIR = "superkart_project/deployment"
 
-# Create a public Docker Space (no-op if it already exists)
-api.create_repo(repo_id=SPACE_REPO, repo_type="space", space_sdk="docker",
+# Create a public Space (no-op if it already exists). Static Spaces are free;
+# Docker Spaces need a PRO plan on free hardware — the same files work with sdk "docker".
+api.create_repo(repo_id=SPACE_REPO, repo_type="space", space_sdk="static",
                 private=False, exist_ok=True)
 
-# Tell the app which model repo to load
-api.add_space_variable(repo_id=SPACE_REPO, key="MODEL_REPO", value=MODEL_REPO)
+# Push Dockerfile, requirements.txt, predictor.py, index.html and README.md
+api.upload_folder(folder_path=DEPLOY_DIR, repo_id=SPACE_REPO, repo_type="space",
+                  ignore_patterns=["app.py", "__pycache__/*"],
+                  commit_message="Deploy SuperKart Streamlit app")
 
-# Push Dockerfile, app.py, requirements.txt and README.md
-api.upload_folder(
-    folder_path="superkart_project/deployment",
-    repo_id=SPACE_REPO,
-    repo_type="space",
-    commit_message="Deploy SuperKart Streamlit app",
-)
+# Push app.py with this account's model repo filled in (also set for Docker via the Dockerfile)
+for name in ("app.py", "Dockerfile"):
+    with open(f"{DEPLOY_DIR}/{name}") as f:
+        content = f.read().replace("your-hf-username/superkart-sales-model", MODEL_REPO)
+    api.upload_file(path_or_fileobj=content.encode(), path_in_repo=name,
+                    repo_id=SPACE_REPO, repo_type="space",
+                    commit_message=f"Deploy {name} (model: {MODEL_REPO})")
+
 print(f"Deployment files pushed -> https://huggingface.co/spaces/{SPACE_REPO}")
+print("Files in Space:", api.list_repo_files(SPACE_REPO, repo_type="space"))

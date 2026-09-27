@@ -5,7 +5,8 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+    MODEL_REPO=your-hf-username/superkart-sales-model
 
 WORKDIR /app
 
@@ -14,7 +15,7 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # ---------- Application code ----------
-COPY . .
+COPY app.py predictor.py ./
 
 # Hugging Face Spaces runs containers as user 1000; give it a writable home for the HF cache
 RUN useradd -m -u 1000 user && chown -R user:user /app
