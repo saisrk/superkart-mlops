@@ -7,7 +7,7 @@ tags: [xgboost, regression, sales-forecasting, superkart]
 Scikit-learn pipeline (StandardScaler + OneHotEncoder -> XGBRegressor) that predicts
 `Product_Store_Sales_Total` for a product in a store.
 
-Trained on [saisrk/superkart-sales-dataset](https://huggingface.co/datasets/saisrk/superkart-sales-dataset) at 2026-09-27 09:21:40 UTC.
+Trained on [saisrk/superkart-sales-dataset](https://huggingface.co/datasets/saisrk/superkart-sales-dataset) at 2026-09-27 09:32:56 UTC.
 
 | Test metric | Value |
 |---|---|
