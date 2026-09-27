@@ -1,0 +1,84 @@
+name: SuperKart MLOps Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:          # allow manual runs from the Actions tab
+
+permissions:
+  contents: write             # lets the training job push metrics back to main
+
+env:
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+jobs:
+  register-dataset:
+    name: 1. Register dataset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Upload raw data to Hugging Face Dataset Hub
+        run: python superkart_project/model_building/data_register.py
+
+  data-prep:
+    name: 2. Data preparation
+    needs: register-dataset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Clean, split and upload train/test data
+        run: python superkart_project/model_building/prep.py
+
+  model-training:
+    name: 3. Model training & registration
+    needs: data-prep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Tune, evaluate and register the best model
+        run: python superkart_project/model_building/train.py
+      - name: Push updated metrics to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add superkart_project/model_building/metrics.json
+          if git diff --staged --quiet; then
+            echo "No metric changes to commit."
+          else
+            git commit -m "ci: update model metrics [skip ci]"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+  deploy-hosting:
+    name: 4. Deploy to Hugging Face Space
+    needs: model-training
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Push deployment files to Hugging Face Space
+        run: python superkart_project/hosting/hosting.py

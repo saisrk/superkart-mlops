@@ -1,0 +1,19 @@
+---
+library_name: sklearn
+tags: [xgboost, regression, sales-forecasting, superkart]
+---
+# SuperKart Sales Forecasting Model
+
+Scikit-learn pipeline (StandardScaler + OneHotEncoder -> XGBRegressor) that predicts
+`Product_Store_Sales_Total` for a product in a store.
+
+Trained on [saisrk/superkart-sales-dataset](https://huggingface.co/datasets/saisrk/superkart-sales-dataset) at 2026-09-27 09:21:40 UTC.
+
+| Test metric | Value |
+|---|---|
+| RMSE | 270.66 |
+| MAE | 104.56 |
+| R2 | 0.9360 |
+| MAPE | 0.0381 |
+
+Best hyper-parameters: `{'colsample_bytree': 1.0, 'learning_rate': 0.05, 'max_depth': 7, 'n_estimators': 100, 'subsample': 0.8}`
